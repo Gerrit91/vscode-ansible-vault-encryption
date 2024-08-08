@@ -1,105 +1,221 @@
-import * as vscode from 'vscode';
-import * as fs from 'fs';
-import * as cp from 'child_process';
+import * as vscode from "vscode";
+import * as fs from "fs";
+import * as cp from "child_process";
+import tmp from "tmp";
 
-const tmp = require('tmp');
-
-enum operation {
-	ENCRYPT = "encrypt",
-	DECRYPT = "decrypt",
-};
+tmp.setGracefulCleanup();
 
 export function activate(context: vscode.ExtensionContext) {
-	const toggleInline = vscode.commands.registerCommand('ansible-vault.toggle-inline', () => {
-		const editor = vscode.window.activeTextEditor;
-		if (!editor) {
-			return;
-		}
+  const toggleInline = vscode.commands.registerCommand(
+    "ansible-vault.toggle-inline",
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        return;
+      }
 
-		const document = editor.document;
-		const selection = editor.selection;
-		if (selection.isEmpty) {
-			vscode.window.showErrorMessage('Your selection is empty.');
-			return;
-		}
+      const document = editor.document;
+      const selection = editor.selection;
+      if (selection.isEmpty) {
+        vscode.window.showErrorMessage("Your selection is empty.");
+        return;
+      }
 
-		const executable = vscode.workspace.getConfiguration('ansible-vault').get("executable") as string;
-		if (!executable) {
-			// TODO: check whether executable is actually present!
-			vscode.window.showErrorMessage('No executable was found.');
-			return;
-		};
+      let toggled;
 
-		const passwordFile = getVaultPasswordFilePath();
-		if (!fs.lstatSync(passwordFile).isFile()) {
-			vscode.window.showErrorMessage('Password file is not valid.');
-			return;
-		}
+      try {
+        toggled = await toggleEncryption(
+          document
+            .getText(selection)
+            .replace("!vault |", "")
+            .replace(/[^\S\r\n]+/gm, "")
+            .trim()
+        );
+      } catch (error) {
+        vscode.window.showErrorMessage((error as Error).message);
+        return;
+      }
 
-		const content = document.getText(selection).replace('!vault |', '').trim();
-		const encrypted = isEncrypted(content);
-		const f = tmp.tmpNameSync();
+      if (isEncrypted(toggled)) {
+        toggled = ("!vault |\n" + toggled).replace(
+          /\n/g,
+          "\n" + " ".repeat(selection.start.character)
+        );
+      }
 
-		fs.writeFileSync(f, Buffer.from(content, 'utf8'));
-		console.log(`wrote selection to temporary file '${f}'`);
+      editor.edit((editBuilder) => {
+        editBuilder.replace(selection, toggled);
+      });
+    }
+  );
 
-		if (encrypted) {
-			console.log("trying to decrypt selection");
-			execAnsibleVault(executable, operation.DECRYPT, f, passwordFile);
-		} else {
-			console.log("trying to encrypt selection");
-			execAnsibleVault(executable, operation.ENCRYPT, f, passwordFile);
-		};
+  const toggleFile = vscode.commands.registerCommand(
+    "ansible-vault.toggle-file",
+    async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        return;
+      }
 
-		let toggled = fs.readFileSync(f, 'utf8');
-		if (!encrypted) {
-			toggled = "!vault |\n" + toggled;
-		}
+      const document = editor.document;
+      let toggled;
 
-		editor.edit(editBuilder => {
-			editBuilder.replace(selection, toggled);
-		});
-	});
-	const toggleFile = vscode.commands.registerCommand('ansible-vault.toggle-file', () => {
-		console.log('toggle-file called');
-		vscode.window.showInformationMessage('toggle-file');
-	});
+      try {
+        toggled = await toggleEncryption(document.getText());
+      } catch (error) {
+        vscode.window.showErrorMessage((error as Error).message);
+        return;
+      }
 
-	context.subscriptions.push(toggleInline, toggleFile);
+      const entireFile = new vscode.Range(
+        document.lineAt(0).range.start,
+        document.lineAt(document.lineCount - 1).range.end
+      );
+      editor.edit((editBuilder) => {
+        editBuilder.replace(entireFile, toggled);
+      });
+    }
+  );
+
+  context.subscriptions.push(toggleInline, toggleFile);
 }
 
 export function deactivate() {}
 
-let getVaultPasswordFilePath = () => {
-	let config = vscode.workspace.getConfiguration('ansible-vault');
+let toggleEncryption = async (content: string): Promise<string> => {
+  const config = vscode.workspace.getConfiguration("ansible-vault");
+  const executable = config.get("executable", "ansible-vault") as string;
 
-	let path = config.passwordFile.trim();
-	if (!path.isEmpty) {
-		return path;
-	}
+  let passwordFile;
+  let cleanupPasswordFile = false;
 
-	let password = config.password.trim();
-	if (password.isEmpty) {
-		vscode.window.showInputBox({ prompt: "Enter the ansible-vault password: " }).then((val) => {
-			password = val;
-		});
-	}
+  if (config.passwordFile) {
+    passwordFile = vscode.workspace.asRelativePath(
+      config.passwordFile.trim(),
+      true
+    );
+  } else {
+    let password;
+    if (config.password) {
+      password = config.password.trim();
+    } else {
+      await vscode.window
+        .showInputBox({ prompt: "Enter the ansible-vault password: " })
+        .then((val) => {
+          password = val;
+        });
+    }
 
-	path = tmp.tmpNameSync();
+    passwordFile = tmp.tmpNameSync();
+    cleanupPasswordFile = true;
 
-	fs.writeFileSync(path, password, 'utf8');
+    console.log(`writing artificial password file`);
 
-	return path;
+    fs.writeFileSync(passwordFile, password, "utf8");
+  }
+
+  console.log(`vault password file is at '${passwordFile}'`);
+
+  let result: string;
+
+  if (isEncrypted(content)) {
+    console.log(`data seems to be encrypted, trying to decrypt`);
+    let decrypted = execDecryptAnsibleVault(executable, content, passwordFile);
+    result = decrypted.trim();
+  } else {
+    console.log(`data seems to be unencrypted, trying to encrypt`);
+    let encrypted = execEncryptAnsibleVault(executable, content, passwordFile);
+    result = encrypted
+      .split("\n")
+      .slice(1)
+      .map((l) => l.trim())
+      .join("\n");
+  }
+
+  if (cleanupPasswordFile) {
+    fs.rmSync(passwordFile);
+  }
+
+  return result;
 };
 
-let isEncrypted = (text : string) => {
-	return text.indexOf('$ANSIBLE_VAULT;') === 0;
+let isEncrypted = (text: string) => {
+  return text.indexOf("$ANSIBLE_VAULT;") === 0;
 };
 
-let execAnsibleVault = (executable : string, op : operation, f : string, passwordFile : string) => {
-	const cmd = `${executable} ${op} ${f} --vault-password-file=${passwordFile}`;
+let execEncryptAnsibleVault = (
+  executable: string,
+  content: string,
+  passwordFile: string
+) => {
+  const args = [
+    "encrypt_string",
+    content,
+    "--vault-password-file",
+    passwordFile,
+  ];
 
-	console.log(`running command: ${cmd}`);
+  console.log(`running command: ${executable} ${args}`);
 
-	return cp.execSync(cmd);
+  let opts = {};
+  const rootPath = getRootPath();
+  if (rootPath) {
+    console.log("found root path: " + rootPath);
+    opts = { cwd: rootPath };
+  }
+
+  const buffer = cp.spawnSync(executable, args, opts);
+
+  return buffer.stdout.toString("utf-8");
+};
+
+let execDecryptAnsibleVault = (
+  executable: string,
+  content: string,
+  passwordFile: string
+) => {
+  const args = ["decrypt", "--vault-password-file", passwordFile];
+
+  console.log(`running command: ${executable} ${args}`);
+
+  let opts: cp.SpawnSyncOptions = { input: content };
+  const rootPath = getRootPath();
+  if (rootPath) {
+    console.log("found root path: " + rootPath);
+    opts.cwd = rootPath;
+  }
+
+  const buffer = cp.spawnSync(executable, args, opts);
+
+  return buffer.stdout.toString("utf-8");
+};
+
+let getRootPath = (): string | undefined => {
+  let rootPath: string | undefined;
+
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return rootPath;
+  }
+
+  if (!!vscode.workspace.workspaceFolders) {
+    rootPath = vscode.workspace.workspaceFolders.length
+      ? vscode.workspace.workspaceFolders[0].name
+      : undefined;
+  }
+
+  if (!!vscode.workspace.getWorkspaceFolder) {
+    let workspaceFolder = vscode.workspace.getWorkspaceFolder(
+      editor.document.uri
+    );
+
+    if (!!workspaceFolder) {
+      rootPath = workspaceFolder.uri.path;
+    } else {
+      // not under any workspace
+      rootPath = undefined;
+    }
+  }
+
+  return rootPath;
 };
