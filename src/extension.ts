@@ -7,7 +7,7 @@ tmp.setGracefulCleanup();
 
 export function activate(context: vscode.ExtensionContext) {
   const toggleInline = vscode.commands.registerCommand(
-    "ansible-vault.toggle-inline",
+    "ansible-vault-encryption.toggle-inline",
     async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
@@ -50,7 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   const toggleFile = vscode.commands.registerCommand(
-    "ansible-vault.toggle-file",
+    "ansible-vault-encryption.toggle-file",
     async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {

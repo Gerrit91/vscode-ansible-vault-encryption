@@ -1,6 +1,6 @@
 {
-  "name": "ansible-vault",
-  "displayName": "ansible-vault",
+  "name": "ansible-vault-encryption",
+  "displayName": "Ansible Vault Encryption",
   "description": "Encrypt and decrypt with ansible-vault.",
   "publisher": "gerrit91",
   "version": "0.0.1",
@@ -16,17 +16,17 @@
   "contributes": {
     "configuration": {
       "properties": {
-        "ansible-vault.executable": {
+        "ansible-vault-encryption.executable": {
           "type": "string",
           "default": "ansible-vault",
           "description": "Path to the ansible-vault executable"
         },
-        "ansible-vault.password": {
+        "ansible-vault-encryption.password": {
           "type": "string",
           "default": "",
           "description": "ansible-vault password text"
         },
-        "ansible-vault.passwordFile": {
+        "ansible-vault-encryption.passwordFile": {
           "type": "string",
           "default": "",
           "description": "ansible-vault password file path"
@@ -35,12 +35,12 @@
     },
     "commands": [
       {
-        "command": "ansible-vault.toggle-inline",
+        "command": "ansible-vault-encryption.toggle-inline",
         "title": "Toggle selection with ansible-vault inline",
         "category": "Ansible Vault"
       },
       {
-        "command": "ansible-vault.toggle-file",
+        "command": "ansible-vault-encryption.toggle-file",
         "title": "Toggle file with ansible-vault inline",
         "category": "Ansible Vault"
       }
@@ -48,7 +48,7 @@
     "menus": {
       "editor/context": [
         {
-          "command": "ansible-vault.toggle-inline",
+          "command": "ansible-vault-encryption.toggle-inline",
           "when": "editorTextFocus"
         }
       ]
@@ -89,6 +89,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/Gerrit91/vscode-ansible-vault-inline"
+    "url": "https://github.com/Gerrit91/vscode-ansible-vault-encryption"
   }
 }
