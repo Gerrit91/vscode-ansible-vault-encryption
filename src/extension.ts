@@ -83,8 +83,11 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {}
 
 let toggleEncryption = async (content: string): Promise<string> => {
-  const config = vscode.workspace.getConfiguration("ansible-vault");
-  const executable = config.get("executable", "ansible-vault") as string;
+  const config = vscode.workspace.getConfiguration("ansible-vault-encryption");
+  const executable = config.get(
+    "executable",
+    "ansible-vault-encryption"
+  ) as string;
 
   let passwordFile;
   let cleanupPasswordFile = false;
