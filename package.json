@@ -3,7 +3,7 @@
   "displayName": "Ansible Vault Encryption",
   "description": "Encrypt and decrypt with ansible-vault.",
   "publisher": "gerrit91",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "license": "MPL-2.0",
   "engines": {
     "vscode": "^1.92.0"
